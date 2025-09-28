@@ -1,9 +1,6 @@
 name: HotWheels Stock Check
 
 on:
-  schedule:
-    - cron: '0 7 * * *'  # 10:00 по Москве
-    - cron: '0 15 * * *' # 18:00 по Москве
   workflow_dispatch:
 
 jobs:
