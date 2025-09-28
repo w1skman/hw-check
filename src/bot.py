@@ -29,10 +29,11 @@ class HotWheelsMonitor:
         # СПИСОК ТОВАРОВ ДЛЯ МОНИТОРИНГА
         self.products = [
             {
-                'id': 'hw_basic', 
+                'id': 'hw_265193', 
                 'name': 'Hot Wheels Basic Car',
-                'url': 'https://lenta.com/product/...',
-                'store': 'Лента'
+                'product_id': '265193',  # ID товара из API
+                'store_id': '3223',      # ID твоего магазина
+                'store': 'Лента (твой магазин)'
             },
         ]
 
@@ -71,15 +72,35 @@ class HotWheelsMonitor:
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации БД: {e}")
 
-    def get_current_stock(self, product_url):
-        """Заглушка для теста"""
+    def get_current_stock(self, product_id, store_id):
+        """Получение остатка через API Ленты"""
         try:
-            import random
-            stock = random.randint(0, 10)
-            logger.info(f"📦 Получен остаток: {stock} (заглушка)")
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+                'Origin': 'https://lenta.com',
+                'Referer': 'https://lenta.com/',
+            }
+            
+            params = {
+                'id': product_id,
+                'storeId': store_id
+            }
+            
+            url = 'https://lenta.com/api-gateway/v1/catalog/items/stock'
+            
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+            
+            data = response.json()
+            stock = data.get('stock', 0)
+            
+            logger.info(f"📦 API Ленты: остаток {stock} шт. (product: {product_id}, store: {store_id})")
             return stock
+            
         except Exception as e:
-            logger.error(f"❌ Ошибка парсинга: {e}")
+            logger.error(f"❌ Ошибка API Ленты: {e}")
             return None
 
     def check_all_products(self):
@@ -91,7 +112,7 @@ class HotWheelsMonitor:
             for product in self.products:
                 logger.info(f"🔍 Проверка товара: {product['name']}")
                 
-                current_stock = self.get_current_stock(product['url'])
+                current_stock = self.get_current_stock(product['product_id'], product['store_id'])
                 if current_stock is None:
                     continue
                 
@@ -135,10 +156,9 @@ class HotWheelsMonitor:
                 f"📊 Было: {old_qty} → Стало: {new_qty}\n"
                 f"📈 Прирост: +{increase} шт.\n"
                 f"⏰ {datetime.now().strftime('%H:%M %d.%m.%Y')}\n"
-                f"\nТестовое уведомление - система работает! ✅"
+                f"\nСкорее беги в магазин! 🏃‍♂️"
             )
             
-            # ИСПРАВЛЕНИЕ: используем asyncio для асинхронного вызова
             asyncio.run(self.bot.send_message(
                 chat_id=self.chat_id,
                 text=message
