@@ -2,9 +2,9 @@ name: HotWheels Stock Check
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # 10:00 по Москве (07:00 UTC)
-    - cron: '0 15 * * *' # 18:00 по Москве (15:00 UTC)
-  workflow_dispatch:  # позволяет запускать вручную
+    - cron: '0 7 * * *'  # 10:00 по Москве
+    - cron: '0 15 * * *' # 18:00 по Москве
+  workflow_dispatch:
 
 jobs:
   check-stock:
@@ -20,17 +20,11 @@ jobs:
           python-version: '3.10'
           
       - name: Install dependencies
-        run: pip install -r requirements.txt
-        
+        run: |
+          pip install -r requirements.txt
+          
       - name: Run HotWheels Monitor
         run: python src/bot.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          
-      - name: Upload database as artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: hotwheels-db
-          path: hotwheels.db
-          retention-days: 7
