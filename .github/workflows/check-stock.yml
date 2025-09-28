@@ -2,8 +2,8 @@ name: HotWheels Stock Check
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # 10:00 по Москве
-    - cron: '0 15 * * *' # 18:00 по Москве
+    - cron: '0 7 * * *'
+    - cron: '0 15 * * *'
   workflow_dispatch:
 
 jobs:
@@ -21,10 +21,13 @@ jobs:
           
       - name: Install dependencies
         run: |
+          cd hw-check  # ← ДОБАВЬ ЭТУ СТРОЧКУ
           pip install -r requirements.txt
           
       - name: Run HotWheels Monitor
-        run: python src/bot.py
+        run: |
+          cd hw-check  # ← И ЭТУ СТРОЧКУ
+          python src/bot.py
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
