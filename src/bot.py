@@ -2,6 +2,7 @@ import sqlite3
 import requests
 import os
 import logging
+import asyncio
 from datetime import datetime
 from telegram import Bot
 
@@ -137,10 +138,11 @@ class HotWheelsMonitor:
                 f"\nТестовое уведомление - система работает! ✅"
             )
             
-            self.bot.send_message(
+            # ИСПРАВЛЕНИЕ: используем asyncio для асинхронного вызова
+            asyncio.run(self.bot.send_message(
                 chat_id=self.chat_id,
                 text=message
-            )
+            ))
             
             logger.info("📤 Уведомление отправлено в Telegram")
             
