@@ -239,3 +239,31 @@ class HotWheelsMonitor:
     def start_bot(self):
         """Запуск бота"""
         self.application.run_polling()
+
+async def run_scheduled_monitoring(self):
+    """Запуск автоматического мониторинга по расписанию"""
+    logger.info("🔄 Running scheduled monitoring...")
+    
+    conn = sqlite3.connect('hotwheels.db')
+    cursor = conn.cursor()
+    
+    for product in self.products:
+        current_stock = self.get_current_stock(product['product_id'], product['store_id'])
+        if current_stock is None:
+            continue
+        
+        cursor.execute('SELECT quantity FROM stock_history WHERE product_id = ? ORDER BY timestamp DESC LIMIT 1', (product['id'],))
+        result = cursor.fetchone()
+        previous_stock = result[0] if result else 0
+        
+        cursor.execute('INSERT INTO stock_history (product_id, store_id, quantity) VALUES (?, ?, ?)', 
+                     (product['id'], product['store'], current_stock))
+        
+        if current_stock > previous_stock:
+            increase = current_stock - previous_stock
+            logger.info(f"🚨 ОБНАРУЖЕНО УВЕЛИЧЕНИЕ: +{increase} шт.")
+            await self.send_notification(product, previous_stock, current_stock, increase)
+    
+    conn.commit()
+    conn.close()
+    logger.info("✅ Scheduled monitoring completed")
