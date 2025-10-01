@@ -1,22 +1,18 @@
 import sqlite3
 import requests
-import os
 import logging
-import asyncio
 from datetime import datetime, timedelta
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ID админа (твой Chat ID)
 ADMIN_CHAT_ID = 1254080795
 
 class HotWheelsMonitor:
     def __init__(self, token):
-        self.bot = Bot(token=token)
-        self.application = Application.builder().token(token).build()
+        self.updater = Updater(token, use_context=True)
         self.init_db()
         self.setup_handlers()
         
@@ -63,78 +59,70 @@ class HotWheelsMonitor:
 
     def setup_handlers(self):
         """Настройка обработчиков команд"""
-        self.application.add_handler(CommandHandler("start", self.start))
-        self.application.add_handler(CallbackQueryHandler(self.button_handler))
+        dp = self.updater.dispatcher
+        dp.add_handler(CommandHandler("start", self.start))
+        dp.add_handler(CallbackQueryHandler(self.button_handler))
 
-    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    def start(self, update, context):
         """Обработка команды /start"""
-        user_id = update.effective_user.id
+        user_id = update.message.chat_id
         
-        # Если не админ - ничего не делаем
         if user_id != ADMIN_CHAT_ID:
-            await update.message.reply_text("❌ У вас нет доступа к этому боту")
+            update.message.reply_text("❌ У вас нет доступа к этому боту")
             return
         
-        # Для админа показываем кнопки
         keyboard = [
             [InlineKeyboardButton("📊 На данный момент", callback_data="current_stock")],
             [InlineKeyboardButton("📈 Статистика", callback_data="statistics_menu")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
+        update.message.reply_text(
             "🔧 Панель управления Hot Wheels Monitor\nВыберите действие:",
             reply_markup=reply_markup
         )
 
-    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    def button_handler(self, update, context):
         """Обработка нажатий кнопок"""
         query = update.callback_query
-        await query.answer()
+        query.answer()
         
         user_id = query.from_user.id
         if user_id != ADMIN_CHAT_ID:
-            await query.edit_message_text("❌ У вас нет доступа")
+            query.edit_message_text("❌ У вас нет доступа")
             return
 
         if query.data == "current_stock":
-            await self.send_current_stock(query)
+            self.send_current_stock(query)
         elif query.data == "statistics_menu":
-            await self.show_statistics_menu(query)
+            self.show_statistics_menu(query)
         elif query.data.startswith("stats_"):
             period = query.data.replace("stats_", "")
-            await self.show_statistics(query, period)
+            self.show_statistics(query, period)
         elif query.data == "back_to_main":
-            await self.back_to_main(query)
+            self.back_to_main(query)
 
-    async def send_current_stock(self, query):
+    def send_current_stock(self, query):
         """Отправка текущего остатка"""
-        await query.edit_message_text("🔄 Выполняю запрос...")
+        query.edit_message_text("🔄 Выполняю запрос...")
         
-        product = self.products[0]  # берем первый товар
+        product = self.products[0]
         current_stock = self.get_current_stock(product['product_id'], product['store_id'])
         
         if current_stock is not None:
-            message = (
-                f"📊 Остаток на данный момент:\n"
-                f"🎯 {product['name']}\n"
-                f"🏪 {product['store']}\n"
-                f"📦 В наличии: {current_stock} шт.\n"
-                f"⏰ {datetime.now().strftime('%H:%M %d.%m.%Y')}"
-            )
+            message = f"📊 Остаток: {current_stock} шт."
         else:
             message = "❌ Ошибка при получении остатка"
         
-        # Показываем кнопки снова
         keyboard = [
             [InlineKeyboardButton("📊 На данный момент", callback_data="current_stock")],
             [InlineKeyboardButton("📈 Статистика", callback_data="statistics_menu")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(message, reply_markup=reply_markup)
+        query.edit_message_text(message, reply_markup=reply_markup)
 
-    async def show_statistics_menu(self, query):
+    def show_statistics_menu(self, query):
         """Меню выбора статистики"""
         keyboard = [
             [InlineKeyboardButton("📅 Неделя", callback_data="stats_week")],
@@ -143,14 +131,11 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
-            "📈 Выберите период для статистики:",
-            reply_markup=reply_markup
-        )
+        query.edit_message_text("📈 Выберите период:", reply_markup=reply_markup)
 
-    async def show_statistics(self, query, period):
+    def show_statistics(self, query, period):
         """Показать статистику за период"""
-        await query.edit_message_text("📊 Формирую статистику...")
+        query.edit_message_text("📊 Формирую статистику...")
         
         stats = self.get_statistics(period)
         
@@ -167,7 +152,6 @@ class HotWheelsMonitor:
                     message += f"{date_str} - {stock} шт.\n"
                 previous_stock = stock
         
-        # Кнопки возврата
         keyboard = [
             [InlineKeyboardButton("📅 Неделя", callback_data="stats_week")],
             [InlineKeyboardButton("📅 Месяц", callback_data="stats_month")],
@@ -175,7 +159,7 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(message, reply_markup=reply_markup)
+        query.edit_message_text(message, reply_markup=reply_markup)
 
     def get_statistics(self, period):
         """Получить статистику из БД"""
@@ -199,7 +183,7 @@ class HotWheelsMonitor:
         conn.close()
         return stats
 
-    async def back_to_main(self, query):
+    def back_to_main(self, query):
         """Возврат в главное меню"""
         keyboard = [
             [InlineKeyboardButton("📊 На данный момент", callback_data="current_stock")],
@@ -207,7 +191,7 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.edit_message_text(
+        query.edit_message_text(
             "🔧 Панель управления Hot Wheels Monitor\nВыберите действие:",
             reply_markup=reply_markup
         )
@@ -238,32 +222,6 @@ class HotWheelsMonitor:
 
     def start_bot(self):
         """Запуск бота"""
-        self.application.run_polling()
-
-async def run_scheduled_monitoring(self):
-    """Запуск автоматического мониторинга по расписанию"""
-    logger.info("🔄 Running scheduled monitoring...")
-    
-    conn = sqlite3.connect('hotwheels.db')
-    cursor = conn.cursor()
-    
-    for product in self.products:
-        current_stock = self.get_current_stock(product['product_id'], product['store_id'])
-        if current_stock is None:
-            continue
-        
-        cursor.execute('SELECT quantity FROM stock_history WHERE product_id = ? ORDER BY timestamp DESC LIMIT 1', (product['id'],))
-        result = cursor.fetchone()
-        previous_stock = result[0] if result else 0
-        
-        cursor.execute('INSERT INTO stock_history (product_id, store_id, quantity) VALUES (?, ?, ?)', 
-                     (product['id'], product['store'], current_stock))
-        
-        if current_stock > previous_stock:
-            increase = current_stock - previous_stock
-            logger.info(f"🚨 ОБНАРУЖЕНО УВЕЛИЧЕНИЕ: +{increase} шт.")
-            await self.send_notification(product, previous_stock, current_stock, increase)
-    
-    conn.commit()
-    conn.close()
-    logger.info("✅ Scheduled monitoring completed")
+        logger.info("🤖 Запускаю Telegram бота...")
+        self.updater.start_polling()
+        self.updater.idle()
