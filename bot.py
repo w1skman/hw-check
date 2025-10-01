@@ -3,13 +3,11 @@ import asyncio
 import logging
 import threading
 from flask import Flask
-from telegram_bot import HotWheelsMonitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-monitor = None
 
 @app.route('/')
 def home():
@@ -19,37 +17,36 @@ def home():
 def health():
     return "🟢 OK"
 
-def run_bot():
-    """Запуск Telegram бота"""
-    global monitor
+async def run_bot_async():
+    """Асинхронный запуск Telegram бота"""
     try:
+        from telegram_bot import HotWheelsMonitor
+        
         token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not token:
             logger.error("❌ TELEGRAM_BOT_TOKEN not found")
             return False
             
         monitor = HotWheelsMonitor(token)
-        
-        # Запускаем бота в отдельном потоке
-        def start_bot():
-            asyncio.run(monitor.start_bot())
-        
-        bot_thread = threading.Thread(target=start_bot)
-        bot_thread.daemon = True
-        bot_thread.start()
-        
-        logger.info("✅ Telegram Bot запущен!")
+        await monitor.start_bot()
         return True
         
     except Exception as e:
         logger.error(f"❌ Ошибка запуска бота: {e}")
         return False
 
+def run_bot():
+    """Запуск бота в отдельном потоке"""
+    def start_async():
+        asyncio.run(run_bot_async())
+    
+    bot_thread = threading.Thread(target=start_async)
+    bot_thread.daemon = True
+    bot_thread.start()
+    logger.info("✅ Telegram Bot запущен в отдельном потоке!")
+
 # Запускаем бот
-if run_bot():
-    logger.info("🎉 Приложение запущено успешно!")
-else:
-    logger.error("💥 Не удалось запустить приложение")
+run_bot()
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
