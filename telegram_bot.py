@@ -1,9 +1,10 @@
 import sqlite3
 import requests
 import logging
+import asyncio
 from datetime import datetime, timedelta
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,7 +13,8 @@ ADMIN_CHAT_ID = 1254080795
 
 class HotWheelsMonitor:
     def __init__(self, token):
-        self.updater = Updater(token, use_context=True)
+        self.token = token
+        self.application = Application.builder().token(token).build()
         self.init_db()
         self.setup_handlers()
         
@@ -56,19 +58,19 @@ class HotWheelsMonitor:
         
         conn.commit()
         conn.close()
+        logger.info("✅ База данных инициализирована")
 
     def setup_handlers(self):
         """Настройка обработчиков команд"""
-        dp = self.updater.dispatcher
-        dp.add_handler(CommandHandler("start", self.start))
-        dp.add_handler(CallbackQueryHandler(self.button_handler))
+        self.application.add_handler(CommandHandler("start", self.start))
+        self.application.add_handler(CallbackQueryHandler(self.button_handler))
 
-    def start(self, update, context):
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /start"""
-        user_id = update.message.chat_id
+        user_id = update.effective_user.id
         
         if user_id != ADMIN_CHAT_ID:
-            update.message.reply_text("❌ У вас нет доступа к этому боту")
+            await update.message.reply_text("❌ У вас нет доступа к этому боту")
             return
         
         keyboard = [
@@ -77,40 +79,46 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        update.message.reply_text(
+        await update.message.reply_text(
             "🔧 Панель управления Hot Wheels Monitor\nВыберите действие:",
             reply_markup=reply_markup
         )
 
-    def button_handler(self, update, context):
+    async def button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка нажатий кнопок"""
         query = update.callback_query
-        query.answer()
+        await query.answer()
         
         user_id = query.from_user.id
         if user_id != ADMIN_CHAT_ID:
-            query.edit_message_text("❌ У вас нет доступа")
+            await query.edit_message_text("❌ У вас нет доступа")
             return
 
         if query.data == "current_stock":
-            self.send_current_stock(query)
+            await self.send_current_stock(query)
         elif query.data == "statistics_menu":
-            self.show_statistics_menu(query)
+            await self.show_statistics_menu(query)
         elif query.data.startswith("stats_"):
             period = query.data.replace("stats_", "")
-            self.show_statistics(query, period)
+            await self.show_statistics(query, period)
         elif query.data == "back_to_main":
-            self.back_to_main(query)
+            await self.back_to_main(query)
 
-    def send_current_stock(self, query):
+    async def send_current_stock(self, query):
         """Отправка текущего остатка"""
-        query.edit_message_text("🔄 Выполняю запрос...")
+        await query.edit_message_text("🔄 Выполняю запрос...")
         
         product = self.products[0]
-        current_stock = self.get_current_stock(product['product_id'], product['store_id'])
+        current_stock = await self.get_current_stock(product['product_id'], product['store_id'])
         
         if current_stock is not None:
-            message = f"📊 Остаток: {current_stock} шт."
+            message = (
+                f"📊 Остаток на данный момент:\n"
+                f"🎯 {product['name']}\n"
+                f"🏪 {product['store']}\n"
+                f"📦 В наличии: {current_stock} шт.\n"
+                f"⏰ {datetime.now().strftime('%H:%M %d.%m.%Y')}"
+            )
         else:
             message = "❌ Ошибка при получении остатка"
         
@@ -120,9 +128,9 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        query.edit_message_text(message, reply_markup=reply_markup)
+        await query.edit_message_text(message, reply_markup=reply_markup)
 
-    def show_statistics_menu(self, query):
+    async def show_statistics_menu(self, query):
         """Меню выбора статистики"""
         keyboard = [
             [InlineKeyboardButton("📅 Неделя", callback_data="stats_week")],
@@ -131,11 +139,14 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        query.edit_message_text("📈 Выберите период:", reply_markup=reply_markup)
+        await query.edit_message_text(
+            "📈 Выберите период для статистики:",
+            reply_markup=reply_markup
+        )
 
-    def show_statistics(self, query, period):
+    async def show_statistics(self, query, period):
         """Показать статистику за период"""
-        query.edit_message_text("📊 Формирую статистику...")
+        await query.edit_message_text("📊 Формирую статистику...")
         
         stats = self.get_statistics(period)
         
@@ -159,7 +170,7 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        query.edit_message_text(message, reply_markup=reply_markup)
+        await query.edit_message_text(message, reply_markup=reply_markup)
 
     def get_statistics(self, period):
         """Получить статистику из БД"""
@@ -183,7 +194,7 @@ class HotWheelsMonitor:
         conn.close()
         return stats
 
-    def back_to_main(self, query):
+    async def back_to_main(self, query):
         """Возврат в главное меню"""
         keyboard = [
             [InlineKeyboardButton("📊 На данный момент", callback_data="current_stock")],
@@ -191,12 +202,12 @@ class HotWheelsMonitor:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        query.edit_message_text(
+        await query.edit_message_text(
             "🔧 Панель управления Hot Wheels Monitor\nВыберите действие:",
             reply_markup=reply_markup
         )
 
-    def get_current_stock(self, product_id, store_id):
+    async def get_current_stock(self, product_id, store_id):
         """Получение остатка через API Ленты"""
         try:
             headers = {
@@ -220,8 +231,7 @@ class HotWheelsMonitor:
             logger.error(f"❌ Ошибка API: {e}")
             return None
 
-    def start_bot(self):
+    async def start_bot(self):
         """Запуск бота"""
         logger.info("🤖 Запускаю Telegram бота...")
-        self.updater.start_polling()
-        self.updater.idle()
+        await self.application.run_polling()
